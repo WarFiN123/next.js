@@ -17,14 +17,14 @@ function errorOnBadHandler(resourcePath: string) {
 /* re-export the userland route configs */
 async function createReExportsCode(
   resourcePath: string,
-  loaderContext: webpack.LoaderContext<any>
+  loaderContext: webpack.LoaderContext<any>,
+  exportNames?: string[]
 ) {
-  const exportNames = await getLoaderModuleNamedExports(
-    resourcePath,
-    loaderContext
-  )
+  const names =
+    exportNames ??
+    (await getLoaderModuleNamedExports(resourcePath, loaderContext))
   // Re-export configs but avoid conflicted exports
-  const reExportNames = exportNames.filter(
+  const reExportNames = names.filter(
     (name) =>
       name !== 'default' &&
       name !== 'generateSitemaps' &&
@@ -153,6 +153,8 @@ export async function GET() {
     },
   })
 }
+
+export const dynamic = 'force-static'
 `
 }
 
@@ -253,6 +255,20 @@ async function getSingleSitemapRouteCode(
   resourcePath: string,
   loaderContext: webpack.LoaderContext<any>
 ) {
+  const exportNames = await getLoaderModuleNamedExports(
+    resourcePath,
+    loaderContext
+  )
+  const hasUserDefinedDynamic = exportNames.includes('dynamic')
+  const reExports = await createReExportsCode(
+    resourcePath,
+    loaderContext,
+    exportNames
+  )
+  const dynamicExport = hasUserDefinedDynamic
+    ? ''
+    : `\nexport const dynamic = 'force-static'\n`
+
   return `\
 /* single sitemap route */
 import { NextResponse } from 'next/server'
@@ -263,7 +279,7 @@ const contentType = ${JSON.stringify(getContentType(resourcePath))}
 const fileType = ${JSON.stringify(getFilenameAndExtension(resourcePath).name)}
 
 ${errorOnBadHandler(resourcePath)}
-${await createReExportsCode(resourcePath, loaderContext)}
+${reExports}
 
 export async function GET() {
   const data = await handler()
@@ -276,7 +292,7 @@ export async function GET() {
     },
   })
 }
-`
+${dynamicExport}`
 }
 
 async function getDynamicSitemapRouteCode(
